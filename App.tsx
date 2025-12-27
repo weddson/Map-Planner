@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
-import { Sidebar } from './components/Sidebar';
-import { MapEditor } from './components/MapEditor';
-import { Marker, Path, Point, Tool } from './types';
+import { Sidebar } from './components/Sidebar.tsx';
+import { MapEditor } from './components/MapEditor.tsx';
+import { Marker, Path, Point, Tool } from './types.ts';
 
 const App: React.FC = () => {
   const [image, setImage] = useState<string | null>(null);

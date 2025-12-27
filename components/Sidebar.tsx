@@ -1,6 +1,7 @@
+
 import React from 'react';
-import { Marker, MarkerStatus, Path, Tool } from '../types';
-import { SelectIcon, MarkerIcon, PathIcon, DeleteIcon, LinkIcon, ResetIcon, ExportIcon } from './icons';
+import { Marker, MarkerStatus, Path, Tool } from '../types.ts';
+import { SelectIcon, MarkerIcon, PathIcon, DeleteIcon, LinkIcon, ResetIcon, ExportIcon } from './icons.tsx';
 
 interface SidebarProps {
   activeTool: Tool;

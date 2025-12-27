@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, MouseEvent, useEffect } from 'react';
-import { Marker, Path, Point, Tool } from '../types';
+import { Marker, Path, Point, Tool } from '../types.ts';
 
 interface MapEditorProps {
   imageSrc: string;
