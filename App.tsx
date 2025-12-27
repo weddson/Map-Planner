@@ -18,7 +18,7 @@ const App: React.FC = () => {
 
   // Load state from localStorage on initial render
   useEffect(() => {
-    const savedState = localStorage.getItem('dungeonMapState');
+    const savedState = localStorage.getItem('mapPlannerState');
     if (savedState) {
       try {
         const { image, markers, paths } = JSON.parse(savedState);
@@ -36,7 +36,7 @@ const App: React.FC = () => {
     if (image) {
       try {
         const stateToSave = { image, markers, paths };
-        localStorage.setItem('dungeonMapState', JSON.stringify(stateToSave));
+        localStorage.setItem('mapPlannerState', JSON.stringify(stateToSave));
       } catch (error) {
         console.error("Failed to save state:", error);
       }
@@ -131,7 +131,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'dungeon-plan.json';
+    a.download = 'map-plan.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -139,7 +139,7 @@ const App: React.FC = () => {
   };
 
   const handleResetWorkspace = () => {
-    localStorage.removeItem('dungeonMapState');
+    localStorage.removeItem('mapPlannerState');
     setImage(null);
     setMarkers([]);
     setPaths([]);
@@ -371,7 +371,7 @@ const App: React.FC = () => {
           />
         ) : (
           <div className="text-center text-gray-400">
-            <h2 className="text-2xl font-bold">Welcome to the Dungeon Map Planner</h2>
+            <h2 className="text-2xl font-bold">Welcome to the Map Planner</h2>
             <p className="mt-2">Please upload a map image or a .json plan file to begin.</p>
           </div>
         )}

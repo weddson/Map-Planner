@@ -83,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside className="w-80 bg-gray-800 p-4 flex flex-col h-full shadow-lg border-r border-gray-700">
-      <h1 className="text-2xl font-bold text-sky-400 mb-6">Dungeon Planner</h1>
+      <h1 className="text-2xl font-bold text-sky-400 mb-6">Map Planner</h1>
 
       <div className="mb-6">
         <label htmlFor="map-upload" className="w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md cursor-pointer text-center transition-colors">

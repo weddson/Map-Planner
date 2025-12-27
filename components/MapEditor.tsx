@@ -114,7 +114,7 @@ export const MapEditor: React.FC<MapEditorProps> = ({
           transformOrigin: '0 0',
         }}
       >
-        <img src={imageSrc} alt="Dungeon Map" className="block" />
+        <img src={imageSrc} alt="Map" className="block" />
         <svg
           className="absolute top-0 left-0 w-full h-full"
           onMouseDown={handleMouseDown}

@@ -1,5 +1,5 @@
 {
-  "name": "Dungeon Map Mission Planner",
-  "description": "An interactive tool to upload a dungeon map, place markers for NPCs and points of interest, draw custom paths, and use Gemini to generate mission ideas based on the map layout.",
+  "name": "Map Planner",
+  "description": "An interactive tool to upload a map, place markers for points of interest, draw custom paths, and plan missions or routes.",
   "requestFramePermissions": []
 }
