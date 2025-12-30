@@ -33,7 +33,6 @@ jobs:
 
       - name: Build
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 

@@ -2,19 +2,26 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Map Planner
 
-This contains everything you need to run your app locally.
+Map Planner is a web tool to annotate maps with markers and paths, then export a plan as JSON or PNG.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1an9viWpLT7rC25yRpK1WuiePChEaZKDy
+## Instalacao
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
+**Prerequisite:** Node.js
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Start the dev server:
    `npm run dev`
+
+## Como usar
+
+1. Open `http://localhost:3000`.
+2. Upload a map image (PNG/JPG) or a `.json` plan.
+3. Add markers and paths, edit labels, and link markers.
+4. Export the plan as `.json` or `.png`.
+
+## Documentacao
+
+See `TOOL.md` for a full description of the tool and its features.
