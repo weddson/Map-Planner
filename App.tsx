@@ -4,6 +4,37 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { MapEditor } from './components/MapEditor.tsx';
 import { Marker, Path, Point, Tool } from './types.ts';
 
+const pointsToPathD = (points: Point[]): string => {
+  if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : '';
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const midPoint = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    d += ` Q ${p1.x} ${p1.y}, ${midPoint.x} ${midPoint.y}`;
+  }
+  d += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
+  return d;
+};
+
+const escapeXml = (value: string) => (
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+);
+
+const loadImage = (src: string): Promise<HTMLImageElement> => (
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image.'));
+    img.src = src;
+  })
+);
+
 const App: React.FC = () => {
   const [image, setImage] = useState<string | null>(null);
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -136,6 +167,106 @@ const App: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportPng = async () => {
+    if (!image) {
+      alert("Please load a map before exporting.");
+      return;
+    }
+
+    try {
+      const baseImage = await loadImage(image);
+      const width = baseImage.naturalWidth || baseImage.width;
+      const height = baseImage.naturalHeight || baseImage.height;
+
+      const pathsMarkup = paths.map(path => {
+        const strokeColor = path.color || '#f59e0b';
+        return `
+          <path
+            d="${pointsToPathD(path.points)}"
+            stroke="${strokeColor}"
+            stroke-width="3"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        `;
+      }).join('');
+
+      const markersMarkup = markers.map(marker => {
+        const markerColor = marker.color || '#10b981';
+        const label = marker.number ? `${marker.number} - ${marker.name}` : marker.name;
+        const textMarkup = showMarkerLabels ? `
+          <text
+            x="15"
+            y="5"
+            fill="white"
+            font-size="12"
+            font-family="sans-serif"
+            paint-order="stroke"
+            stroke="black"
+            stroke-width="3"
+            stroke-linejoin="round"
+          >${escapeXml(label)}</text>
+        ` : '';
+
+        return `
+          <g transform="translate(${marker.position.x}, ${marker.position.y})">
+            <circle r="12" fill="${markerColor}66" stroke="${markerColor}" stroke-width="2" />
+            <circle r="6" fill="${markerColor}" stroke="#fff" stroke-width="2" />
+            ${textMarkup}
+          </g>
+        `;
+      }).join('');
+
+      const svgString = `<?xml version="1.0" encoding="UTF-8"?>
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+          <image href="${image}" x="0" y="0" width="${width}" height="${height}" />
+          ${pathsMarkup}
+          ${markersMarkup}
+        </svg>
+      `;
+
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+      const svgImage = new Image();
+      svgImage.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(svgUrl);
+          alert("Failed to prepare export canvas.");
+          return;
+        }
+        ctx.drawImage(svgImage, 0, 0);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(svgUrl);
+          if (!blob) {
+            alert("Failed to export PNG.");
+            return;
+          }
+          const pngUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = pngUrl;
+          a.download = 'map-plan.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(pngUrl);
+        }, 'image/png');
+      };
+      svgImage.onerror = () => {
+        URL.revokeObjectURL(svgUrl);
+        alert("Failed to generate PNG.");
+      };
+      svgImage.src = svgUrl;
+    } catch (error) {
+      console.error("PNG export failed:", error);
+      alert("Could not export PNG. Please try again.");
+    }
   };
 
   const handleResetWorkspace = () => {
@@ -333,6 +464,7 @@ const App: React.FC = () => {
         onFileUpload={handleFileUpload}
         onResetWorkspace={handleResetWorkspace}
         onExportPlan={handleExportPlan}
+        onExportPng={handleExportPng}
         selectedElement={selectedElement}
         markers={markers}
         paths={paths}

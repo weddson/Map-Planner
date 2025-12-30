@@ -9,6 +9,7 @@ interface SidebarProps {
   onFileUpload: (file: File) => void;
   onResetWorkspace: () => void;
   onExportPlan: () => void;
+  onExportPng: () => void;
   selectedElement: { type: 'marker' | 'path'; id: string } | null;
   markers: Marker[];
   paths: Path[];
@@ -33,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onFileUpload,
   onResetWorkspace,
   onExportPlan,
+  onExportPng,
   selectedElement,
   markers,
   paths,
@@ -160,6 +162,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button onClick={onExportPlan} className="flex items-center space-x-2 text-xs text-gray-400 hover:text-white transition-colors" title="Export Plan">
                     <ExportIcon />
                     <span>Export</span>
+                </button>
+                <button onClick={onExportPng} className="flex items-center space-x-2 text-xs text-gray-400 hover:text-white transition-colors" title="Export PNG">
+                    <ExportIcon />
+                    <span>Export PNG</span>
                 </button>
                 <button onClick={onResetWorkspace} className="flex items-center space-x-2 text-xs text-gray-400 hover:text-white transition-colors" title="Reset Workspace">
                     <ResetIcon />
