@@ -10,6 +10,7 @@ export interface Marker {
   id: string;
   name: string;
   number?: string;
+  area?: string;
   position: Point;
   status: MarkerStatus;
   linkedMarkerIds?: string[];
@@ -26,4 +27,14 @@ export interface Path {
   color?: string;
 }
 
-export type Tool = 'select' | 'marker' | 'path';
+export interface Area {
+  id: string;
+  name: string;
+  number?: string;
+  center: Point;
+  radius: number; // pixels
+  topLeft: Point;
+  bottomRight: Point;
+}
+
+export type Tool = 'select' | 'marker' | 'path' | 'area';
