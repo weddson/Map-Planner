@@ -159,6 +159,7 @@ const App: React.FC = () => {
   const [colorFilters, setColorFilters] = useState<Record<string, boolean>>({});
   const [areaFilters, setAreaFilters] = useState<Record<string, boolean>>({});
   const [numberFilters, setNumberFilters] = useState<Record<string, boolean>>({});
+  const [drawAreaFilters, setDrawAreaFilters] = useState<Record<string, boolean>>({});
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
 
   // Load state from localStorage on initial render
@@ -796,6 +797,12 @@ const App: React.FC = () => {
     return visibleMarkerIds.has(path.linkedMarkers.startId) && visibleMarkerIds.has(path.linkedMarkers.endId);
   });
 
+  const filteredAreas = areas.filter(area => {
+    const number = area.number || '';
+    if (number && drawAreaFilters[number] === false) return false;
+    return true;
+  });
+
   return (
     <div className="flex h-screen w-screen bg-gray-800 font-sans">
       <Sidebar
@@ -836,6 +843,8 @@ const App: React.FC = () => {
         setAreaFilters={setAreaFilters}
         numberFilters={numberFilters}
         setNumberFilters={setNumberFilters}
+        drawAreaFilters={drawAreaFilters}
+        setDrawAreaFilters={setDrawAreaFilters}
       />
       <main className="flex-1 p-4 bg-gray-900 overflow-hidden">
         {image ? (
@@ -844,7 +853,7 @@ const App: React.FC = () => {
             imageSize={imageSize}
             markers={filteredMarkers}
             paths={filteredPaths}
-            areas={areas}
+            areas={filteredAreas}
             activeTool={activeTool}
             selectedElement={selectedElement}
             onAddMarker={addMarker}

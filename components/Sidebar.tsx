@@ -41,6 +41,8 @@ interface SidebarProps {
   setAreaFilters: (filters: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
   numberFilters: Record<string, boolean>;
   setNumberFilters: (filters: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
+  drawAreaFilters: Record<string, boolean>;
+  setDrawAreaFilters: (filters: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -81,6 +83,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setAreaFilters,
   numberFilters,
   setNumberFilters,
+  drawAreaFilters,
+  setDrawAreaFilters,
 }) => {
     const [viewOptionsOpen, setViewOptionsOpen] = useState(true);
     const [filtersOpen, setFiltersOpen] = useState(true);
@@ -101,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const uniqueColors = Array.from(new Set(markers.map(m => m.color || '#10b981')));
     const uniqueAreas = Array.from(new Set(markers.map(m => m.area).filter(Boolean))) as string[];
     const uniqueNumbers = Array.from(new Set(markers.map(m => m.number).filter(Boolean))) as string[];
-
+    const uniqueDrawAreaNumbers = Array.from(new Set(areas.map(a => a.number).filter(Boolean))) as string[];
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -331,6 +335,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                 )) : <p className="text-xs text-gray-500">No numbers defined.</p>}
             </div>
+            
+            <h3 className="text-sm font-medium text-gray-400 mt-3">By Draw Area Number</h3>
+            <div className="flex flex-wrap gap-2">
+                {uniqueDrawAreaNumbers.length > 0 ? uniqueDrawAreaNumbers.map((num: string) => (
+                    <button
+                        key={num}
+                        onClick={() => {
+                            setDrawAreaFilters(prev => ({ ...prev, [num]: prev[num] === false ? true : false }));
+                        }}
+                        className={`px-2 py-1 text-xs rounded-md border transition-all ${drawAreaFilters[num] !== false ? 'border-yellow-400 bg-gray-700 text-yellow-300' : 'border-gray-600 bg-gray-800 text-gray-500 opacity-60'}`}
+                        title={`Toggle draw area ${num}`}
+                    >
+                        Area {num}
+                    </button>
+                )) : <p className="text-xs text-gray-500">No draw areas defined.</p>}
+            </div>
         </div>
         )}
       </div>
@@ -533,6 +553,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className="mt-1 w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-sky-500 focus:border-sky-500"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="area-center-x" className="block text-sm font-medium text-gray-300">Center X</label>
+                  <input
+                    type="number"
+                    id="area-center-x"
+                    step={1}
+                    value={Math.round(selectedArea.center?.x ?? 0)}
+                    onChange={(e) => {
+                      const x = Number(e.target.value);
+                      const base = selectedArea.center ?? { x: 0, y: 0 };
+                      updateArea(selectedArea.id, { center: { ...base, x: Number.isFinite(x) ? x : 0 } });
+                    }}
+                    className="mt-1 w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-sky-500 focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="area-center-y" className="block text-sm font-medium text-gray-300">Center Y</label>
+                  <input
+                    type="number"
+                    id="area-center-y"
+                    step={1}
+                    value={Math.round(selectedArea.center?.y ?? 0)}
+                    onChange={(e) => {
+                      const y = Number(e.target.value);
+                      const base = selectedArea.center ?? { x: 0, y: 0 };
+                      updateArea(selectedArea.id, { center: { ...base, y: Number.isFinite(y) ? y : 0 } });
+                    }}
+                    className="mt-1 w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-sky-500 focus:border-sky-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
