@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Area, Marker, MarkerStatus, Path, Tool } from '../types.ts';
+import { Area, Marker, MarkerStatus, Path, PolygonArea, Tool } from '../types.ts';
 import { SelectIcon, MarkerIcon, PathIcon, AreaIcon, DeleteIcon, LinkIcon, ResetIcon, ExportIcon } from './icons.tsx';
 
 interface SidebarProps {
@@ -10,16 +10,22 @@ interface SidebarProps {
   collapsed: boolean;
   setCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   onResetWorkspace: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   onExportPlan: () => void;
   onExportPng: () => void;
   onExportLua: () => void;
-  selectedElement: { type: 'marker' | 'path' | 'area'; id: string } | null;
+  selectedElement: { type: 'marker' | 'path' | 'area' | 'polygonArea'; id: string } | null;
   markers: Marker[];
   paths: Path[];
   areas: Area[];
+  polygonAreas: PolygonArea[];
   updateMarker: (id: string, data: Partial<Marker>) => void;
   updatePath: (id: string, data: Partial<Path>) => void;
   updateArea: (id: string, data: Partial<Area>) => void;
+  updatePolygonArea: (id: string, data: Partial<PolygonArea>) => void;
   deleteSelected: () => void;
   linkingState: { fromMarkerId: string } | null;
   onStartLinking: (fromMarkerId: string) => void;
@@ -52,6 +58,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   collapsed,
   setCollapsed,
   onResetWorkspace,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   onExportPlan,
   onExportPng,
   onExportLua,
@@ -59,9 +69,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   markers,
   paths,
   areas,
+  polygonAreas,
   updateMarker,
   updatePath,
   updateArea,
+  updatePolygonArea,
   deleteSelected,
   linkingState,
   onStartLinking,
@@ -101,11 +113,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const selectedArea = selectedElement?.type === 'area'
     ? areas.find(a => a.id === selectedElement.id)
     : null;
+
+    const selectedPolygonArea = selectedElement?.type === 'polygonArea'
+    ? polygonAreas.find(a => a.id === selectedElement.id)
+    : null;
     
     const uniqueColors = Array.from(new Set(markers.map(m => m.color || '#10b981')));
     const uniqueAreas = Array.from(new Set(markers.map(m => m.area).filter(Boolean))) as string[];
     const uniqueNumbers = Array.from(new Set(markers.map(m => m.number).filter(Boolean))) as string[];
-    const uniqueDrawAreaNumbers = Array.from(new Set(areas.map(a => a.number).filter(Boolean))) as string[];
+    const uniqueDrawAreaNumbers = Array.from(new Set([...areas, ...polygonAreas].map(a => a.number).filter(Boolean))) as string[];
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -160,6 +176,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <ResetIcon />
               <span>Reset Workspace</span>
+            </button>
+            <button
+              onClick={onUndo}
+              disabled={!canUndo}
+              className="w-full border border-gray-500 hover:border-gray-400 text-gray-400 hover:text-white py-2 px-4 rounded-md transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Undo (Ctrl/Cmd+Z)"
+            >
+              <span>Undo</span>
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={!canRedo}
+              className="w-full border border-gray-500 hover:border-gray-400 text-gray-400 hover:text-white py-2 px-4 rounded-md transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Redo (Ctrl+Y or Cmd+Shift+Z)"
+            >
+              <span>Redo</span>
             </button>
           </div>
 
@@ -388,10 +420,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <ToolButton tool="marker" label="Add Marker"><MarkerIcon /></ToolButton>
         <ToolButton tool="path" label="Draw Path"><PathIcon /></ToolButton>
         <ToolButton tool="area" label="Draw Area"><AreaIcon /></ToolButton>
+        <ToolButton tool="polygon-area" label="Draw Poligonal Area"><AreaIcon /></ToolButton>
 
         {activeTool === 'area' && (
           <p className="text-xs text-gray-400">
             1º clique define o centro. Mova o mouse para ajustar e 2º clique define o raio. <span className="font-semibold">Esc</span> cancela.
+          </p>
+        )}
+
+        {activeTool === 'polygon-area' && (
+          <p className="text-xs text-gray-400">
+            Clique para adicionar pontos. <span className="font-semibold">Enter</span> finaliza e <span className="font-semibold">Esc</span> cancela.
           </p>
         )}
         </>
@@ -514,6 +553,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
                  <DeleteIcon /><span>Delete Path</span>
                </button>
             </div>
+        ) : selectedPolygonArea ? (
+          <div className="bg-gray-700/50 p-4 rounded-md">
+            <h3 className="text-lg font-bold text-orange-300 mb-3">Edit Polygon Area</h3>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="polygon-area-number" className="block text-sm font-medium text-gray-300">Number</label>
+                <input
+                  type="text"
+                  id="polygon-area-number"
+                  value={selectedPolygonArea.number || ''}
+                  onChange={(e) => updatePolygonArea(selectedPolygonArea.id, { number: e.target.value })}
+                  className="mt-1 w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-sky-500 focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="polygon-area-name" className="block text-sm font-medium text-gray-300">Name</label>
+                <input
+                  type="text"
+                  id="polygon-area-name"
+                  value={selectedPolygonArea.name}
+                  onChange={(e) => updatePolygonArea(selectedPolygonArea.id, { name: e.target.value })}
+                  className="mt-1 w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-sky-500 focus:border-sky-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label htmlFor="polygon-area-color" className="block text-sm font-medium text-gray-300">Color</label>
+                <input
+                  type="color"
+                  id="polygon-area-color"
+                  value={selectedPolygonArea.color || '#facc15'}
+                  onChange={(e) => updatePolygonArea(selectedPolygonArea.id, { color: e.target.value })}
+                  className="w-10 h-10 p-1 bg-gray-800 border border-gray-600 rounded-md cursor-pointer"
+                />
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Pontos: {selectedPolygonArea.points.length}
+              </p>
+
+              <p className="text-xs text-gray-400">
+                Dica: selecione a area e arraste os pontos no mapa.
+              </p>
+
+              <button onClick={deleteSelected} className="w-full mt-2 flex items-center justify-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                <DeleteIcon /><span>Delete Polygon Area</span>
+              </button>
+            </div>
+          </div>
         ) : selectedArea ? (
           <div className="bg-gray-700/50 p-4 rounded-md">
             <h3 className="text-lg font-bold text-yellow-300 mb-3">Edit Area</h3>
@@ -538,6 +626,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className="mt-1 w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-sky-500 focus:border-sky-500"
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="area-color" className="block text-sm font-medium text-gray-300">Color</label>
+                <input
+                  type="color"
+                  id="area-color"
+                  value={selectedArea.color || '#facc15'}
+                  onChange={(e) => updateArea(selectedArea.id, { color: e.target.value })}
+                  className="w-10 h-10 p-1 bg-gray-800 border border-gray-600 rounded-md cursor-pointer"
+                />
+              </div>
+
 
               <div>
                 <label htmlFor="area-radius" className="block text-sm font-medium text-gray-300">Radius (px)</label>

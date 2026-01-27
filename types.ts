@@ -37,4 +37,11 @@ export interface Area {
   bottomRight: Point;
 }
 
-export type Tool = 'select' | 'marker' | 'path' | 'area';
+export interface PolygonArea {
+  id: string;
+  name: string;
+  number?: string;
+  points: Point[];
+}
+
+export type Tool = 'select' | 'marker' | 'path' | 'area' | 'polygon-area';

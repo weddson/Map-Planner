@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar.tsx';
 import { MapEditor } from './components/MapEditor.tsx';
-import { Area, Marker, Path, Point, Tool } from './types.ts';
+import { Area, Marker, Path, Point, PolygonArea, Tool } from './types.ts';
 
 const pointsToPathD = (points: Point[]): string => {
   if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : '';
@@ -39,6 +39,12 @@ const distance = (a: Point, b: Point) => {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
+};
+
+const polygonCentroid = (points: Point[]): Point => {
+  if (!points.length) return { x: 0, y: 0 };
+  const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  return { x: sum.x / points.length, y: sum.y / points.length };
 };
 
 type ImageSize = { width: number; height: number };
@@ -140,16 +146,41 @@ const normalizeAreas = (raw: unknown): Area[] => {
   return areas;
 };
 
+const normalizePolygonAreas = (raw: unknown): PolygonArea[] => {
+  if (!Array.isArray(raw)) return [];
+  const areas: PolygonArea[] = [];
+
+  for (const item of raw) {
+    const anyItem = item as any;
+    const id = typeof anyItem?.id === 'string' ? anyItem.id : `poly-area-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const name = typeof anyItem?.name === 'string' ? anyItem.name : 'Polygon Area';
+    const number = typeof anyItem?.number === 'string' ? anyItem.number : undefined;
+
+    if (Array.isArray(anyItem?.points) && anyItem.points.length) {
+      const points: Point[] = anyItem.points
+        .filter((p: any) => p && typeof p.x === 'number' && typeof p.y === 'number')
+        .map((p: any) => ({ x: p.x, y: p.y }));
+
+      if (!points.length) continue;
+      areas.push({ id, name, number, points });
+    }
+  }
+
+  return areas;
+};
+
 const App: React.FC = () => {
   const [image, setImage] = useState<string | null>(null);
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [paths, setPaths] = useState<Path[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [polygonAreas, setPolygonAreas] = useState<PolygonArea[]>([]);
   const [activeTool, setActiveTool] = useState<Tool>('select');
-  const [selectedElement, setSelectedElement] = useState<{ type: 'marker' | 'path' | 'area'; id: string } | null>(null);
+  const [selectedElement, setSelectedElement] = useState<{ type: 'marker' | 'path' | 'area' | 'polygonArea'; id: string } | null>(null);
   const [linkingState, setLinkingState] = useState<{ fromMarkerId: string } | null>(null);
   const [drawingPathId, setDrawingPathId] = useState<string | null>(null);
   const [drawingArea, setDrawingArea] = useState<{ id: string; center: Point } | null>(null);
+  const [drawingPolygonAreaId, setDrawingPolygonAreaId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [markerSize, setMarkerSize] = useState(1);
   const [labelSize, setLabelSize] = useState(1);
@@ -161,22 +192,36 @@ const App: React.FC = () => {
   const [numberFilters, setNumberFilters] = useState<Record<string, boolean>>({});
   const [drawAreaFilters, setDrawAreaFilters] = useState<Record<string, boolean>>({});
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
+  const [history, setHistory] = useState<{ image: string | null; markers: Marker[]; paths: Path[]; areas: Area[]; polygonAreas: PolygonArea[] }[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyIndexRef = useRef(-1);
+  const isUndoingRef = useRef(false);
+  const pendingSnapshotRef = useRef<{ image: string | null; markers: Marker[]; paths: Path[]; areas: Area[]; polygonAreas: PolygonArea[] } | null>(null);
+
 
   // Load state from localStorage on initial render
   useEffect(() => {
     const savedState = localStorage.getItem('mapPlannerState');
     if (savedState) {
       try {
-        const { image, markers, paths, areas } = JSON.parse(savedState);
+        const { image, markers, paths, areas, polygonAreas } = JSON.parse(savedState);
         setImage(image);
         setMarkers(markers || []);
         setPaths(paths || []);
-        setAreas(normalizeAreas(areas));
+        const normalizedAreas = normalizeAreas(areas);
+        const normalizedPolygonAreas = normalizePolygonAreas(polygonAreas);
+        setAreas(normalizedAreas);
+        setPolygonAreas(normalizedPolygonAreas);
+        pendingSnapshotRef.current = { image, markers: markers || [], paths: paths || [], areas: normalizedAreas, polygonAreas: normalizedPolygonAreas };
       } catch (error) {
         console.error("Failed to parse saved state:", error);
       }
     }
   }, []);
+
+  useEffect(() => {
+    historyIndexRef.current = historyIndex;
+  }, [historyIndex]);
 
   useEffect(() => {
     if (!image) {
@@ -215,13 +260,30 @@ const App: React.FC = () => {
   useEffect(() => {
     if (image) {
       try {
-        const stateToSave = { image, markers, paths, areas };
+        const stateToSave = { image, markers, paths, areas, polygonAreas };
         localStorage.setItem('mapPlannerState', JSON.stringify(stateToSave));
       } catch (error) {
         console.error("Failed to save state:", error);
       }
     }
-  }, [image, markers, paths, areas]);
+  }, [image, markers, paths, areas, polygonAreas]);
+
+  // Track history for undo
+  useEffect(() => {
+    if (isUndoingRef.current) {
+      isUndoingRef.current = false;
+      return;
+    }
+
+    const snapshot = pendingSnapshotRef.current || { image, markers, paths, areas, polygonAreas };
+    pendingSnapshotRef.current = null;
+    setHistory(prev => {
+      const next = prev.slice(0, historyIndexRef.current + 1);
+      next.push(snapshot);
+      return next.slice(-50);
+    });
+    setHistoryIndex(prev => (prev < 0 ? 0 : Math.min(prev + 1, 49)));
+  }, [image, markers, paths, areas, polygonAreas]);
   
   // Sync color filters with available marker colors
   useEffect(() => {
@@ -269,17 +331,21 @@ const App: React.FC = () => {
       reader.onload = (e) => {
         try {
           const text = e.target?.result as string;
-          const { image, markers, paths, areas } = JSON.parse(text);
+          const { image, markers, paths, areas, polygonAreas } = JSON.parse(text);
           const parsedAreas = normalizeAreas(areas);
+          const parsedPolygonAreas = normalizePolygonAreas(polygonAreas);
+          pendingSnapshotRef.current = { image, markers, paths, areas: parsedAreas, polygonAreas: parsedPolygonAreas };
           if (image && Array.isArray(markers) && Array.isArray(paths)) {
             setImage(image);
             setMarkers(markers);
             setPaths(paths);
             setAreas(parsedAreas);
+            setPolygonAreas(parsedPolygonAreas);
             setSelectedElement(null);
             setLinkingState(null);
             setDrawingPathId(null);
             setDrawingArea(null);
+            setDrawingPolygonAreaId(null);
           } else {
             alert("Invalid plan file format.");
           }
@@ -295,10 +361,12 @@ const App: React.FC = () => {
         setMarkers([]);
         setPaths([]);
         setAreas([]);
+        setPolygonAreas([]);
         setSelectedElement(null);
         setLinkingState(null);
         setDrawingPathId(null);
         setDrawingArea(null);
+        setDrawingPolygonAreaId(null);
         setImageSize(null);
       };
       reader.readAsDataURL(file);
@@ -312,7 +380,7 @@ const App: React.FC = () => {
       alert("Please load a map before exporting.");
       return;
     }
-    const stateToSave = { image, markers, paths, areas };
+    const stateToSave = { image, markers, paths, areas, polygonAreas };
     const jsonString = JSON.stringify(stateToSave, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -326,7 +394,7 @@ const App: React.FC = () => {
   };
 
   const handleExportLua = () => {
-    if (!image && markers.length === 0 && areas.length === 0) {
+    if (!image && markers.length === 0 && areas.length === 0 && polygonAreas.length === 0) {
       alert("No markers or areas to export.");
       return;
     }
@@ -359,12 +427,25 @@ const App: React.FC = () => {
       const bottomRightY = Math.round(area.bottomRight.y);
       const name = area.name.replace(/"/g, '\\"');
       const number = area.number || '';
-      lua += `    [${index + 1}] = { name = "${name}", number = "${number}", centerX = ${centerX}, centerY = ${centerY}, radius = ${radius}, topLeftX = ${topLeftX}, topLeftY = ${topLeftY}, bottomRightX = ${bottomRightX}, bottomRightY = ${bottomRightY} }`;
+      const color = area.color || '#facc15';
+      lua += `    [${index + 1}] = { name = "${name}", number = "${number}", color = "${color}", centerX = ${centerX}, centerY = ${centerY}, radius = ${radius}, topLeftX = ${topLeftX}, topLeftY = ${topLeftY}, bottomRightX = ${bottomRightX}, bottomRightY = ${bottomRightY} }`;
       lua += index < areas.length - 1 ? ",\n" : "\n";
     });
     lua += "}\n\n";
 
-    lua += "return { markers = markers, areas = areas }\n";
+    // Exportar areas poligonais
+    lua += "local polygon_areas = {\n";
+    polygonAreas.forEach((area, index) => {
+      const name = area.name.replace(/"/g, '\\"');
+      const number = area.number || '';
+      const color = area.color || '#facc15';
+      const points = area.points.map(p => `{ x = ${Math.round(p.x)}, y = ${Math.round(p.y)} }`).join(', ');
+      lua += `    [${index + 1}] = { name = "${name}", number = "${number}", color = "${color}", points = { ${points} } }`;
+      lua += index < polygonAreas.length - 1 ? ",\n" : "\n";
+    });
+    lua += "}\n\n";
+
+    lua += "return { markers = markers, areas = areas, polygon_areas = polygon_areas }\n";
 
     const blob = new Blob([lua], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -403,8 +484,8 @@ const App: React.FC = () => {
       }).join('');
 
       const areasMarkup = areas.map(area => {
-        const fillColor = '#facc15';
-        const strokeColor = '#facc15';
+        const fillColor = area.color || '#facc15';
+        const strokeColor = area.color || '#facc15';
         const label = area.number ? `${area.number} - ${area.name}` : area.name;
 
         const textMarkup = showMarkerLabels ? `
@@ -429,6 +510,44 @@ const App: React.FC = () => {
               cx="${area.center.x}"
               cy="${area.center.y}"
               r="${Math.max(1, area.radius)}"
+              fill="${fillColor}"
+              fill-opacity="0.25"
+              stroke="${strokeColor}"
+              stroke-width="2"
+            />
+            ${textMarkup}
+          </g>
+        `;
+      }).join('');
+
+      const polygonAreasMarkup = polygonAreas.map(area => {
+        if (area.points.length < 2) return '';
+        const points = area.points.map(p => `${p.x},${p.y}`).join(' ');
+        const labelPoint = polygonCentroid(area.points);
+        const fillColor = area.color || '#facc15';
+        const strokeColor = area.color || '#facc15';
+        const label = area.number ? `${area.number} - ${area.name}` : area.name;
+
+        const textMarkup = showMarkerLabels ? `
+          <text
+            x="${labelPoint.x}"
+            y="${labelPoint.y}"
+            fill="black"
+            font-size="14"
+            font-family="sans-serif"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            paint-order="stroke"
+            stroke="white"
+            stroke-width="3"
+            stroke-linejoin="round"
+          >${escapeXml(label)}</text>
+        ` : '';
+
+        return `
+          <g>
+            <polygon
+              points="${points}"
               fill="${fillColor}"
               fill-opacity="0.25"
               stroke="${strokeColor}"
@@ -469,6 +588,7 @@ const App: React.FC = () => {
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
           <image href="${image}" x="0" y="0" width="${width}" height="${height}" />
           ${areasMarkup}
+          ${polygonAreasMarkup}
           ${pathsMarkup}
           ${markersMarkup}
         </svg>
@@ -515,16 +635,62 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRedo = () => {
+    setHistory(prev => {
+      if (historyIndexRef.current < 0 || historyIndexRef.current >= prev.length - 1) return prev;
+      const nextIndex = historyIndexRef.current + 1;
+      const snapshot = prev[nextIndex];
+      if (!snapshot) return prev;
+      isUndoingRef.current = true;
+      setImage(snapshot.image);
+      setMarkers(snapshot.markers);
+      setPaths(snapshot.paths);
+      setAreas(snapshot.areas);
+      setPolygonAreas(snapshot.polygonAreas);
+      setSelectedElement(null);
+      setDrawingPathId(null);
+      setDrawingArea(null);
+      setDrawingPolygonAreaId(null);
+      setLinkingState(null);
+      setHistoryIndex(nextIndex);
+      return prev;
+    });
+  };
+
+  const handleUndo = () => {
+    setHistory(prev => {
+      if (historyIndexRef.current <= 0) return prev;
+      const nextIndex = historyIndexRef.current - 1;
+      const snapshot = prev[nextIndex];
+      if (!snapshot) return prev;
+      isUndoingRef.current = true;
+      setImage(snapshot.image);
+      setMarkers(snapshot.markers);
+      setPaths(snapshot.paths);
+      setAreas(snapshot.areas);
+      setPolygonAreas(snapshot.polygonAreas);
+      setSelectedElement(null);
+      setDrawingPathId(null);
+      setDrawingArea(null);
+      setDrawingPolygonAreaId(null);
+      setLinkingState(null);
+      setHistoryIndex(nextIndex);
+      return prev;
+    });
+  };
+
   const handleResetWorkspace = () => {
     localStorage.removeItem('mapPlannerState');
     setImage(null);
     setMarkers([]);
     setPaths([]);
     setAreas([]);
+    setPolygonAreas([]);
     setSelectedElement(null);
     setLinkingState(null);
     setDrawingPathId(null);
     setDrawingArea(null);
+    setDrawingPolygonAreaId(null);
     setZoom(1);
     setImageSize(null);
   };
@@ -570,6 +736,7 @@ const App: React.FC = () => {
         radius: initialRadius,
         topLeft: bounds.topLeft,
         bottomRight: bounds.bottomRight,
+        color: '#facc15',
       };
       setAreas(prev => [...prev, newArea]);
       setDrawingArea({ id, center: point });
@@ -581,6 +748,27 @@ const App: React.FC = () => {
     const r = distance(drawingArea.center, point);
     updateArea(drawingArea.id, { radius: Math.max(1, r) });
     setDrawingArea(null);
+  };
+
+  const addPolygonAreaPoint = (point: Point) => {
+    if (drawingPolygonAreaId) {
+      const area = polygonAreas.find(a => a.id === drawingPolygonAreaId);
+      if (area) {
+        updatePolygonArea(drawingPolygonAreaId, { points: [...area.points, point] });
+      }
+    } else {
+      const id = `poly-area-${Date.now()}`;
+      const newArea: PolygonArea = {
+        id,
+        number: `${polygonAreas.length + 1}`,
+        name: 'New Polygon Area',
+        points: [point],
+        color: '#facc15',
+      };
+      setPolygonAreas(prev => [...prev, newArea]);
+      setDrawingPolygonAreaId(id);
+      setSelectedElement({ type: 'polygonArea', id });
+    }
   };
 
   const insertPathPoint = (pathId: string, point: Point, index: number) => {
@@ -603,6 +791,12 @@ const App: React.FC = () => {
   useEffect(() => {
     if (activeTool !== 'area') {
       setDrawingArea(null);
+    }
+  }, [activeTool]);
+
+  useEffect(() => {
+    if (activeTool !== 'polygon-area') {
+      setDrawingPolygonAreaId(null);
     }
   }, [activeTool]);
 
@@ -629,6 +823,10 @@ const App: React.FC = () => {
   
   const updatePath = (id: string, newPathData: Partial<Path>) => {
     setPaths(paths.map(p => p.id === id ? { ...p, ...newPathData } : p));
+  };
+
+  const updatePolygonArea = (id: string, newAreaData: Partial<PolygonArea>) => {
+    setPolygonAreas(prev => prev.map(a => a.id === id ? { ...a, ...newAreaData } : a));
   };
 
   const updateArea = (id: string, newAreaData: Partial<Area>) => {
@@ -679,8 +877,10 @@ const App: React.FC = () => {
           }
         }
         setPaths(paths.filter(p => p.id !== selectedElement.id));
-    } else {
+    } else if (selectedElement.type === 'area') {
         setAreas(areas.filter(a => a.id !== selectedElement.id));
+    } else {
+        setPolygonAreas(polygonAreas.filter(a => a.id !== selectedElement.id));
     }
     setSelectedElement(null);
   };
@@ -747,10 +947,12 @@ const App: React.FC = () => {
             handleCancelLinking();
             setDrawingPathId(null);
             setDrawingArea(null);
+            setDrawingPolygonAreaId(null);
             setSelectedElement(null);
         }
         if (e.key === 'Enter') {
           setDrawingArea(null);
+          setDrawingPolygonAreaId(null);
         }
     };
 
@@ -758,6 +960,18 @@ const App: React.FC = () => {
       // Ignorar se estiver digitando em um input/textarea
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
         return;
       }
 
@@ -773,7 +987,7 @@ const App: React.FC = () => {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedElement, markers, paths, areas]);
+  }, [selectedElement, markers, paths, areas, polygonAreas]);
 
   const filteredMarkers = markers.filter(marker => {
     const color = marker.color || '#10b981';
@@ -803,6 +1017,12 @@ const App: React.FC = () => {
     return true;
   });
 
+  const filteredPolygonAreas = polygonAreas.filter(area => {
+    const number = area.number || '';
+    if (number && drawAreaFilters[number] === false) return false;
+    return true;
+  });
+
   return (
     <div className="flex h-screen w-screen bg-gray-800 font-sans">
       <Sidebar
@@ -812,6 +1032,10 @@ const App: React.FC = () => {
         collapsed={sidebarCollapsed}
         setCollapsed={setSidebarCollapsed}
         onResetWorkspace={handleResetWorkspace}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={historyIndex > 0}
+        canRedo={historyIndex >= 0 && historyIndex < history.length - 1}
         onExportPlan={handleExportPlan}
         onExportPng={handleExportPng}
         onExportLua={handleExportLua}
@@ -819,9 +1043,11 @@ const App: React.FC = () => {
         markers={markers}
         paths={paths}
         areas={areas}
+        polygonAreas={polygonAreas}
         updateMarker={updateMarker}
         updatePath={updatePath}
         updateArea={updateArea}
+        updatePolygonArea={updatePolygonArea}
         deleteSelected={deleteSelected}
         linkingState={linkingState}
         onStartLinking={handleStartLinking}
@@ -854,24 +1080,29 @@ const App: React.FC = () => {
             markers={filteredMarkers}
             paths={filteredPaths}
             areas={filteredAreas}
+            polygonAreas={filteredPolygonAreas}
             activeTool={activeTool}
             selectedElement={selectedElement}
             onAddMarker={addMarker}
             onAddPathPoint={addPathPoint}
             onAddAreaPoint={addAreaPoint}
+            onAddPolygonAreaPoint={addPolygonAreaPoint}
             onUpdateMarker={updateMarker}
             onUpdatePath={updatePath}
             onUpdateArea={updateArea}
+            onUpdatePolygonArea={updatePolygonArea}
             onSelectElement={setSelectedElement}
             linkingState={linkingState}
             onLinkMarkers={handleLinkMarkers}
             onInsertPathPoint={insertPathPoint}
             drawingArea={drawingArea}
+            drawingPolygonAreaId={drawingPolygonAreaId}
             zoom={zoom}
             markerSize={markerSize}
             labelSize={labelSize}
             showMarkerLabels={showMarkerLabels}
             showAreaLabels={showAreaLabels}
+            onZoomChange={setZoom}
           />
         ) : (
           <div className="text-center text-gray-400">

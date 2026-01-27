@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, MouseEvent, useEffect } from 'react';
-import { Area, Marker, Path, Point, Tool } from '../types.ts';
+import { Area, Marker, Path, Point, PolygonArea, Tool } from '../types.ts';
 
 interface MapEditorProps {
   imageSrc: string;
@@ -8,20 +8,25 @@ interface MapEditorProps {
   markers: Marker[];
   paths: Path[];
   areas: Area[];
+  polygonAreas: PolygonArea[];
   activeTool: Tool;
-  selectedElement: { type: 'marker' | 'path' | 'area'; id: string } | null;
+  selectedElement: { type: 'marker' | 'path' | 'area' | 'polygonArea'; id: string } | null;
   onAddMarker: (position: Point) => void;
   onAddPathPoint: (point: Point) => void;
   onAddAreaPoint: (point: Point) => void;
+  onAddPolygonAreaPoint: (point: Point) => void;
   onUpdateMarker: (id: string, data: Partial<Marker>) => void;
   onUpdatePath: (id: string, data: Partial<Path>) => void;
   onUpdateArea: (id: string, data: Partial<Area>) => void;
-  onSelectElement: (selection: { type: 'marker' | 'path' | 'area'; id: string } | null) => void;
+  onUpdatePolygonArea: (id: string, data: Partial<PolygonArea>) => void;
+  onSelectElement: (selection: { type: 'marker' | 'path' | 'area' | 'polygonArea'; id: string } | null) => void;
   linkingState: { fromMarkerId: string } | null;
   onLinkMarkers: (toMarkerId: string) => void;
   onInsertPathPoint: (pathId: string, point: Point, index: number) => void;
   drawingArea: { id: string; center: Point } | null;
+  drawingPolygonAreaId: string | null;
   zoom: number;
+  onZoomChange: (zoom: number | ((prev: number) => number)) => void;
   markerSize: number;
   labelSize: number;
   showMarkerLabels: boolean;
@@ -41,33 +46,64 @@ const pointsToPathD = (points: Point[]): string => {
   return d;
 };
 
+const pointsToPolygonString = (points: Point[]): string => points.map(p => `${p.x},${p.y}`).join(' ');
+
+const polygonCentroid = (points: Point[]): Point => {
+  if (!points.length) return { x: 0, y: 0 };
+  const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  return { x: sum.x / points.length, y: sum.y / points.length };
+};
+
 export const MapEditor: React.FC<MapEditorProps> = ({
   imageSrc,
   imageSize,
   markers,
   paths,
   areas,
+  polygonAreas,
   activeTool,
   selectedElement,
   onAddMarker,
   onAddPathPoint,
   onAddAreaPoint,
+  onAddPolygonAreaPoint,
   onUpdateMarker,
   onUpdatePath,
   onUpdateArea,
+  onUpdatePolygonArea,
   onSelectElement,
   linkingState,
   onLinkMarkers,
   onInsertPathPoint,
   drawingArea,
+  drawingPolygonAreaId,
   zoom,
+  onZoomChange,
   markerSize,
   labelSize,
   showMarkerLabels,
   showAreaLabels,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState<{ type: 'marker' | 'pathPoint' | 'areaCenter' | 'areaRadius'; id: string; pointIndex?: number } | null>(null);
+  const [dragging, setDragging] = useState<{ type: 'marker' | 'pathPoint' | 'areaCenter' | 'areaRadius' | 'polygonPoint'; id: string; pointIndex?: number } | null>(null);
+
+  const handleWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const direction = e.deltaY < 0 ? 1 : -1;
+    const factor = direction > 0 ? 1.1 : 1 / 1.1;
+    onZoomChange(z => Math.min(5, Math.max(0.1, z * factor)));
+  };
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const listener: EventListener = handleWheel as unknown as EventListener;
+    el.addEventListener('wheel', listener, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', listener);
+    };
+  }, [onZoomChange]);
 
   const getMousePos = (e: MouseEvent<SVGElement>): Point => {
     const svg = e.currentTarget;
@@ -97,6 +133,8 @@ export const MapEditor: React.FC<MapEditorProps> = ({
       onAddPathPoint(pos);
     } else if (activeTool === 'area') {
       onAddAreaPoint(pos);
+    } else if (activeTool === 'polygon-area') {
+      onAddPolygonAreaPoint(pos);
     }
   };
 
@@ -123,6 +161,13 @@ export const MapEditor: React.FC<MapEditorProps> = ({
         newPoints[dragging.pointIndex] = pos;
         onUpdatePath(path.id, { points: newPoints });
       }
+    } else if (dragging.type === 'polygonPoint') {
+      const area = polygonAreas.find(a => a.id === dragging.id);
+      if (area && dragging.pointIndex !== undefined) {
+        const newPoints = [...area.points];
+        newPoints[dragging.pointIndex] = pos;
+        onUpdatePolygonArea(area.id, { points: newPoints });
+      }
     } else if (dragging.type === 'areaCenter') {
       onUpdateArea(dragging.id, { center: pos });
     } else if (dragging.type === 'areaRadius') {
@@ -139,7 +184,7 @@ export const MapEditor: React.FC<MapEditorProps> = ({
 
   const getCursor = () => {
     if (linkingState) return 'crosshair';
-    return { select: 'default', marker: 'crosshair', path: 'crosshair', area: 'crosshair' }[activeTool];
+    return { select: 'default', marker: 'crosshair', path: 'crosshair', area: 'crosshair', 'polygon-area': 'crosshair' }[activeTool];
   };
 
   const getRadiusHandlePos = (area: Area): Point => ({ x: area.center.x + Math.max(1, area.radius), y: area.center.y });
@@ -169,8 +214,8 @@ export const MapEditor: React.FC<MapEditorProps> = ({
         >
           {areas.map(area => {
             const isSelected = selectedElement?.type === 'area' && selectedElement.id === area.id;
-            const fillColor = '#facc15';
-            const strokeColor = isSelected ? '#0ea5e9' : '#facc15';
+            const fillColor = area.color || '#facc15';
+            const strokeColor = isSelected ? '#0ea5e9' : (area.color || '#facc15');
             const strokeWidth = isSelected ? 4 : 2;
             const label = area.number ? `${area.number} - ${area.name}` : area.name;
 
@@ -208,6 +253,88 @@ export const MapEditor: React.FC<MapEditorProps> = ({
                   <text
                     x={area.center.x}
                     y={area.center.y}
+                    fill="black"
+                    fontSize={14 * labelSize}
+                    fontFamily="sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    paintOrder="stroke"
+                    stroke="white"
+                    strokeWidth={3 * labelSize}
+                    strokeLinejoin="round"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {label}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {polygonAreas.map(area => {
+            const isSelected = selectedElement?.type === 'polygonArea' && selectedElement.id === area.id;
+            const fillColor = area.color || '#facc15';
+            const strokeColor = isSelected ? '#0ea5e9' : (area.color || '#facc15');
+            const strokeWidth = isSelected ? 4 : 2;
+            const label = area.number ? `${area.number} - ${area.name}` : area.name;
+            const points = pointsToPolygonString(area.points);
+            const labelPoint = polygonCentroid(area.points);
+            const isClosed = area.points.length >= 3;
+
+            return (
+              <g key={area.id}>
+                {isClosed ? (
+                  <>
+                    <polygon
+                      points={points}
+                      fill="transparent"
+                      stroke="transparent"
+                      strokeWidth={12}
+                      className="pointer-events-auto"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (activeTool === 'select' && !linkingState) {
+                          onSelectElement({ type: 'polygonArea', id: area.id });
+                        }
+                      }}
+                    />
+                    <polygon
+                      points={points}
+                      fill={fillColor}
+                      fillOpacity={0.25}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <polyline
+                      points={points}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={12}
+                      className="pointer-events-auto"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (activeTool === 'select' && !linkingState) {
+                          onSelectElement({ type: 'polygonArea', id: area.id });
+                        }
+                      }}
+                    />
+                    <polyline
+                      points={points}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  </>
+                )}
+                {showMarkerLabels && area.points.length > 1 && (
+                  <text
+                    x={labelPoint.x}
+                    y={labelPoint.y}
                     fill="black"
                     fontSize={14 * labelSize}
                     fontFamily="sans-serif"
@@ -357,6 +484,25 @@ export const MapEditor: React.FC<MapEditorProps> = ({
             );
           })()}
           
+          {selectedElement?.type === 'polygonArea' && polygonAreas.find(a => a.id === selectedElement.id)?.points.map((point, index) => {
+            return (
+              <circle
+                key={`${selectedElement.id}-poly-point-${index}`}
+                cx={point.x} cy={point.y} r="6"
+                fill="#fff"
+                stroke="#0ea5e9" strokeWidth="2"
+                className="pointer-events-auto"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  if (activeTool === 'select') {
+                    setDragging({ type: 'polygonPoint', id: selectedElement.id, pointIndex: index });
+                  }
+                }}
+                style={{ cursor: activeTool === 'select' ? 'grab' : 'default' }}
+              />
+            );
+          })}
+
           {selectedElement?.type === 'path' && paths.find(p => p.id === selectedElement.id)?.points.map((point, index, points) => {
             const path = paths.find(p => p.id === selectedElement.id);
             if (!path) return null;
